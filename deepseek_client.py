@@ -39,20 +39,18 @@ CREATE_POW_URL     = f"{BASE_URL}/api/v0/chat/create_pow_challenge"
 COMPLETION_URL     = f"{BASE_URL}/api/v0/chat/completion"
 CONTINUE_URL       = f"{BASE_URL}/api/v0/chat/continue"
 DELETE_SESSION_URL = f"{BASE_URL}/api/v0/chat_session/delete"
+UPLOAD_FILE_URL    = f"{BASE_URL}/api/v0/file/upload_file"
+DELETE_FILE_URL    = f"{BASE_URL}/api/v0/file/delete"
 COMPLETION_TARGET_PATH = "/api/v0/chat/completion"
 
+
 MODEL_MAP = {
-    "deepseek-v4-flash":  "default",
-    "deepseek-v4-pro":    "expert",
-    "deepseek-r2":        "expert",
-    "deepseek-chat":      "default",
     "deepseek-reasoner":  "expert",
-    "deepseek-v3":        "default",
-    "deepseek-r1":        "expert",
+    "deepseek-chat":      "expert",
 }
 
-def get_model_type(model: str) -> str:
-    return MODEL_MAP.get(model.lower().strip(), "default")
+def get_model_type(model: str = "") -> str:
+    return "expert"
 
 
 # ============================================================
@@ -60,14 +58,56 @@ def get_model_type(model: str) -> str:
 # ============================================================
 
 class PlaywrightWorker(threading.Thread):
-    def __init__(self, fingerprint: str = "88888"):
+    def __init__(self, fingerprint: str = "88888", default_proxy: str = None):
         super().__init__(name="PlaywrightWorker", daemon=True)
         self.fingerprint = fingerprint
+        self.default_proxy = default_proxy
         self.task_queue = queue.Queue()
         self._sse_queue = queue.Queue()
         self.init_queue = queue.Queue()
         self.browser = None
-        self.page = None
+        self.contexts = {}  # account_id -> (context, page)
+
+    def _setup_page(self, page):
+        page.on("console", lambda msg: print(f"[browser console] {msg.type}: {msg.text}"))
+
+    def _navigate_page(self, page):
+        import time as _time
+        last_err = None
+        for attempt in range(1, 4):
+            try:
+                page.goto(
+                    "https://chat.deepseek.com",
+                    wait_until="domcontentloaded",
+                    timeout=60000
+                )
+                _time.sleep(1)
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                print(f"[browser] Lần {attempt} kết nối DeepSeek thất bại: {e}")
+                if attempt < 3:
+                    _time.sleep(3)
+        if last_err:
+            raise last_err
+
+    def _get_page(self, account_id: str = "default", proxy: str = None):
+        if not account_id:
+            account_id = "default"
+        if account_id in self.contexts:
+            return self.contexts[account_id][1]
+        
+        effective_proxy = proxy or self.default_proxy
+        proxy_info = f" với proxy {effective_proxy}" if effective_proxy else " (trực tiếp)"
+        print(f"[browser] Khởi tạo context cách ly cho tài khoản [{account_id}]{proxy_info}...")
+        proxy_dict = {"server": effective_proxy} if effective_proxy else None
+        ctx = self.browser.new_context(proxy=proxy_dict)
+        page = ctx.new_page()
+        self._setup_page(page)
+        self._navigate_page(page)
+        self.contexts[account_id] = (ctx, page)
+        return page
 
     def run(self):
         try:
@@ -79,41 +119,19 @@ class PlaywrightWorker(threading.Thread):
                     '--fingerprint-platform=windows',
                 ]
             )
-            self.page = self.browser.new_page()
-
-            self.page.expose_function("_py_sse_chunk", self._on_sse_chunk)
-            self.page.expose_function("_py_sse_done",  self._on_sse_done)
-
-            # Log console messages from JS to Python console for debugging
-            self.page.on("console", lambda msg: print(f"[browser console] {msg.type}: {msg.text}"))
-
-            # Điều hướng vào deepseek — retry tối đa 3 lần
-            import time as _time
-            last_err = None
-            for attempt in range(1, 4):
-                try:
-                    print(f"[browser] Kết nối DeepSeek (lần {attempt}/3)...")
-                    self.page.goto(
-                        "https://chat.deepseek.com",
-                        wait_until="domcontentloaded",
-                        timeout=60000
-                    )
-                    _time.sleep(1)
-                    last_err = None
-                    break
-                except Exception as e:
-                    last_err = e
-                    print(f"[browser] Lần {attempt} thất bại: {e}")
-                    if attempt < 3:
-                        _time.sleep(5)
-
-            if last_err:
-                raise last_err
-
+            # Khởi tạo context mặc định
+            print("[browser] Đang khởi tạo phiên trình duyệt DeepSeek...")
+            proxy_dict = {"server": self.default_proxy} if self.default_proxy else None
+            default_ctx = self.browser.new_context(proxy=proxy_dict)
+            default_page = default_ctx.new_page()
+            self._setup_page(default_page)
+            self._navigate_page(default_page)
+            self.contexts["default"] = (default_ctx, default_page)
             self.init_queue.put(("ok", None))
         except Exception as e:
             self.init_queue.put(("error", e))
             return
+
 
         while True:
             task = self.task_queue.get()
@@ -130,8 +148,11 @@ class PlaywrightWorker(threading.Thread):
                 elif action == "post_sse_stream":
                     url = args[0] if args else ""
                     # print(f"[worker] Executing post_sse_stream to {url}...")
-                    self._post_sse_stream(*args, resp_queue)
+                    self._post_sse_stream(args[0], args[1], args[2], resp_queue, *args[3:])
                     # print(f"[worker] post_sse_stream to {url} done.")
+                elif action == "upload_file":
+                    res = self._upload_file(*args)
+                    resp_queue.put(("ok", res))
                 elif action == "solve_pow":
                     res = self._solve_pow_in_browser(*args)
                     resp_queue.put(("ok", res))
@@ -148,6 +169,42 @@ class PlaywrightWorker(threading.Thread):
                 # print(f"[worker] Action {action} failed: {e}")
                 resp_queue.put(("error", e))
 
+    def _upload_file(self, url: str, headers: dict, file_content: str, file_name: str, account_id: str = "default", proxy: str = None) -> dict:
+        page = self._get_page(account_id, proxy)
+        result = page.evaluate(
+            """async ([url, headers, content, filename]) => {
+                try {
+                    const formData = new FormData();
+                    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                    formData.append('file', blob, filename);
+
+                    const fetchHeaders = { ...headers };
+                    delete fetchHeaders['Content-Type'];
+                    delete fetchHeaders['content-type'];
+
+                    const resp = await fetch(url, {
+                        method:  'POST',
+                        headers: fetchHeaders,
+                        body:    formData,
+                    });
+                    const text = await resp.text();
+                    return { status: resp.status, body: text, ok: true };
+                } catch(e) {
+                    return { status: 0, body: '', error: e.toString(), ok: false };
+                }
+            }""",
+            [url, headers, file_content, file_name]
+        )
+        if not result.get('ok'):
+            raise RuntimeError(f"Upload error: {result.get('error', 'unknown')}")
+        if result['status'] >= 400:
+            raise RuntimeError(f"HTTP {result['status']}: {result['body'][:300]}")
+        raw = result['body']
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"JSON parse lỗi khi upload: {e}\nRaw: {raw[:300]}")
+
     def _on_sse_chunk(self, chunk: str):
         # print(f"[worker] Callback chunk received: {chunk.strip()}")
         self._sse_queue.put(("chunk", chunk))
@@ -156,12 +213,13 @@ class PlaywrightWorker(threading.Thread):
         # print("[worker] Callback done received.")
         self._sse_queue.put(("done", None))
 
-    def _post_json(self, url: str, headers: dict, payload: dict) -> dict:
+    def _post_json(self, url: str, headers: dict, payload: dict, account_id: str = "default", proxy: str = None) -> dict:
         import time as _time
+        page = self._get_page(account_id, proxy)
         last_err = None
         for attempt in range(5):
             try:
-                result = self.page.evaluate(
+                result = page.evaluate(
                     """async ([url, headers, body]) => {
                         try {
                             const resp = await fetch(url, {
@@ -202,16 +260,22 @@ class PlaywrightWorker(threading.Thread):
                 raise
         raise last_err
 
-    def _post_sse_stream(self, url: str, headers: dict, payload: dict, resp_queue: queue.Queue):
-        self.page.evaluate(
+    def _post_sse_stream(self, url: str, headers: dict, payload: dict, resp_queue: queue.Queue, account_id: str = "default", proxy: str = None):
+        page = self._get_page(account_id, proxy)
+        page.evaluate(
             """async ([url, headers, body]) => {
                 window._sse_chunks = [];
                 window._sse_done = false;
+                window._sse_abort = false;
                 console.log("JS: Starting fetch to " + url);
+                const controller = new AbortController();
+                window._sse_controller = controller;
+
                 fetch(url, {
                     method:  'POST',
                     headers: headers,
                     body:    body,
+                    signal:  controller.signal
                 }).then(async resp => {
                     console.log("JS: Fetch responded with status " + resp.status);
                     if (resp.status >= 400) {
@@ -223,6 +287,10 @@ class PlaywrightWorker(threading.Thread):
                     const decoder = new TextDecoder();
                     let   buffer  = '';
                     while (true) {
+                        if (window._sse_abort) {
+                            try { reader.cancel(); } catch(e) {}
+                            break;
+                        }
                         const { done, value } = await reader.read();
                         if (done) break;
                         buffer += decoder.decode(value, { stream: true });
@@ -244,17 +312,26 @@ class PlaywrightWorker(threading.Thread):
             [url, headers, json.dumps(payload or {})]
         )
 
+        import time as _t
         stream_done = False
+        last_chunk_time = _t.time()
+        timeout_seconds = 180.0
+        idle_timeout = 45.0
+        t_start = _t.time()
+
         while not stream_done:
-            self.page.wait_for_timeout(100)
-            result = self.page.evaluate("""() => {
+            page.wait_for_timeout(100)
+            result = page.evaluate("""() => {
                 const chunks = window._sse_chunks || [];
                 window._sse_chunks = [];
                 return { chunks: chunks, done: window._sse_done || false };
             }""")
-            # print(f"[worker] Poll result: {result}")
             
-            for chunk in result["chunks"]:
+            chunks = result["chunks"]
+            if chunks:
+                last_chunk_time = _t.time()
+
+            for chunk in chunks:
                 if chunk.startswith("error: "):
                     resp_queue.put(("error", RuntimeError(chunk[7:])))
                     stream_done = True
@@ -267,6 +344,22 @@ class PlaywrightWorker(threading.Thread):
             if result["done"]:
                 resp_queue.put(("done", None))
                 stream_done = True
+                break
+
+            now = _t.time()
+            if (now - last_chunk_time > idle_timeout and now - t_start > 15.0) or (now - t_start > timeout_seconds):
+                try:
+                    page.evaluate("""() => {
+                        window._sse_abort = true;
+                        if (window._sse_controller) {
+                            try { window._sse_controller.abort(); } catch(e) {}
+                        }
+                    }""")
+                except Exception:
+                    pass
+                resp_queue.put(("error", TimeoutError(f"SSE stream timed out (idle {now - last_chunk_time:.1f}s, total {now - t_start:.1f}s)")))
+                stream_done = True
+                break
 
     def _solve_pow_in_browser(self, challenge: dict) -> int:
         challenge_hex = challenge["challenge"]
@@ -274,8 +367,12 @@ class PlaywrightWorker(threading.Thread):
         expire_at = int(challenge["expire_at"])
         difficulty = int(challenge.get("difficulty", 144000))
 
+        page = self.contexts.get("default", (None, None))[1]
+        if not page:
+            page = next(iter(self.contexts.values()))[1]
+
         # Run JS solver inside the browser page using Web Workers
-        ans = self.page.evaluate(
+        ans = page.evaluate(
             r"""async ([challengeHex, salt, expireAt, difficulty]) => {
                 const workerSrc = `
                     const RC_H = new Int32Array([
@@ -520,12 +617,22 @@ class BrowserSession:
     Chạy các Playwright calls trên PlaywrightWorker thread để đảm bảo thread safety.
     """
 
-    def __init__(self, fingerprint: str = "88888"):
-        self._worker = PlaywrightWorker(fingerprint)
+    def __init__(self, fingerprint: str = "88888", default_proxy: str = None):
+        self._worker = PlaywrightWorker(fingerprint, default_proxy=default_proxy)
         self._worker.start()
         status, res = self._worker.init_queue.get()
         if status == "error":
             raise RuntimeError(f"Browser initialization failed: {res}")
+        self._account_proxies = {}
+
+    def register_account_proxy(self, account_id: str, proxy: str):
+        self._account_proxies[account_id] = proxy
+
+    def _extract_account_id(self, headers: dict) -> str:
+        auth = headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:23].strip()
+        return "default"
 
     def close(self):
         try:
@@ -535,19 +642,25 @@ class BrowserSession:
         except Exception as e:
             print(f"[browser] Close error: {e}")
 
-    def post_json(self, url: str, extra_headers: dict = None, payload: dict = None) -> dict:
+    def post_json(self, url: str, extra_headers: dict = None, payload: dict = None, account_id: str = None) -> dict:
         headers = {**BASE_HEADERS, **(extra_headers or {})}
+        if not account_id:
+            account_id = self._extract_account_id(headers)
+        proxy = self._account_proxies.get(account_id)
         resp_queue = queue.Queue()
-        self._worker.task_queue.put(("post_json", (url, headers, payload), resp_queue))
+        self._worker.task_queue.put(("post_json", (url, headers, payload, account_id, proxy), resp_queue))
         status, res = resp_queue.get()
         if status == "error":
             raise res
         return res
 
-    def post_sse_stream(self, url: str, extra_headers: dict = None, payload: dict = None):
+    def post_sse_stream(self, url: str, extra_headers: dict = None, payload: dict = None, account_id: str = None):
         headers = {**BASE_HEADERS, **(extra_headers or {})}
+        if not account_id:
+            account_id = self._extract_account_id(headers)
+        proxy = self._account_proxies.get(account_id)
         resp_queue = queue.Queue()
-        self._worker.task_queue.put(("post_sse_stream", (url, headers, payload), resp_queue))
+        self._worker.task_queue.put(("post_sse_stream", (url, headers, payload, account_id, proxy), resp_queue))
         while True:
             status, val = resp_queue.get()
             if status == "error":
@@ -556,6 +669,18 @@ class BrowserSession:
                 break
             elif status == "chunk":
                 yield val
+
+    def upload_file(self, file_content: str, file_name: str, extra_headers: dict = None, account_id: str = None) -> dict:
+        headers = {**BASE_HEADERS, **(extra_headers or {})}
+        if not account_id:
+            account_id = self._extract_account_id(headers)
+        proxy = self._account_proxies.get(account_id)
+        resp_queue = queue.Queue()
+        self._worker.task_queue.put(("upload_file", (UPLOAD_FILE_URL, headers, file_content, file_name, account_id, proxy), resp_queue))
+        status, res = resp_queue.get()
+        if status == "error":
+            raise res
+        return res
 
     def solve_pow_in_browser(self, challenge: dict) -> str:
         difficulty = int(challenge.get("difficulty", 144000))
@@ -575,20 +700,68 @@ class BrowserSession:
 
 
 # ============================================================
+# CONTEXT FILE UPLOAD (Long Context Helper)
+# ============================================================
+
+def upload_context_file(token: str, content: str, session: BrowserSession = None) -> str:
+    """
+    Gói context dài thành file text và upload lên DeepSeek để lấy file_id.
+    Tên file được sinh ngẫu nhiên (doc_xxxx.txt) để tránh bị nhận diện bot như DS2API_HISTORY.txt.
+    """
+    if session is None:
+        session = get_default_session()
+
+    import uuid
+    file_name = f"doc_{uuid.uuid4().hex[:8]}.txt"
+    data = session.upload_file(
+        file_content=content,
+        file_name=file_name,
+        extra_headers=auth_headers(token)
+    )
+    if data.get("code") != 0:
+        raise RuntimeError(f"Upload file context thất bại: {data.get('msg')}")
+
+    biz = data.get("data", {}).get("biz_data", {})
+    file_id = biz.get("id") or biz.get("file_id") or biz.get("file", {}).get("id")
+    if not file_id:
+        raise RuntimeError(f"Không lấy được file_id từ DeepSeek: {data}")
+    return file_id
+
+def delete_file(token: str, file_id: str, session: BrowserSession = None):
+    if session is None:
+        session = get_default_session()
+    try:
+        session.post_json(
+            DELETE_FILE_URL,
+            extra_headers=auth_headers(token),
+            payload={"file_id": file_id}
+        )
+    except Exception:
+        pass
+
+
+
+
+# ============================================================
 # GLOBAL SESSION POOL (đơn giản: 1 session)
 # ============================================================
 
 _default_session: BrowserSession = None
 _session_lock = threading.Lock()
 
-def get_default_session() -> BrowserSession:
+def get_default_session(default_proxy: str = None) -> BrowserSession:
     global _default_session
     with _session_lock:
         if _default_session is None:
-            print("[browser] Khởi tạo browser session...")
-            _default_session = BrowserSession()
+            if not default_proxy:
+                import os
+                default_proxy = os.environ.get("DEEPSEEK_PROXY", "").strip() or None
+            proxy_info = f" (proxy: {default_proxy})" if default_proxy else ""
+            print(f"[browser] Khởi tạo browser session{proxy_info}...")
+            _default_session = BrowserSession(default_proxy=default_proxy)
             print("[browser] Sẵn sàng.")
         return _default_session
+
 
 def make_session() -> BrowserSession:
     """Alias để tương thích với code cũ"""
@@ -902,8 +1075,8 @@ def parse_sse_stream(response):
 # ============================================================
 
 def call_completion(token: str, session_id: str, prompt: str,
-                    model: str = "deepseek-v4-flash",
-                    thinking: bool = False,
+                    model: str = "deepseek-reasoner",
+                    thinking: bool = True,
                     search: bool = False,
                     pow_response: str = "",
                     ref_file_ids: list = None,
@@ -980,9 +1153,10 @@ def delete_session(token: str, session_id: str,
 # ============================================================
 
 def collect_response(token: str, session_id: str, prompt: str,
-                     model: str = "deepseek-v4-flash",
-                     thinking: bool = False,
+                     model: str = "deepseek-reasoner",
+                     thinking: bool = True,
                      search: bool = False,
+                     ref_file_ids: list = None,
                      http_session: BrowserSession = None,
                      max_continue_rounds: int = 8) -> dict:
 
@@ -1022,6 +1196,7 @@ def collect_response(token: str, session_id: str, prompt: str,
     lines = call_completion(
         token=token, session_id=session_id, prompt=prompt,
         model=model, thinking=thinking, search=search,
+        ref_file_ids=ref_file_ids,
         pow_response=pow_resp, http_session=http_session,
     )
     process(lines)

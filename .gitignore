@@ -12,9 +12,10 @@ __pycache__/
 deepseek_chat_history.json
 deepseek_response.json
 
-# Ignore IDE configuration files
+# Ignore IDE and test cache
 .vscode/
 .idea/
+.pytest_cache/
 *.suo
 *.ntvs*
 *.njsproj
