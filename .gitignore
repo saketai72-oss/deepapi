@@ -21,3 +21,11 @@ deepseek_response.json
 *.njsproj
 *.sln
 *.swp
+
+# IP & WARP proxy runtime and large binaries (auto-downloaded/generated on first run)
+ip/bin/
+ip/*.log
+ip/*.pid
+ip/account.json
+ip/warp_ipv6.conf
+

@@ -13,7 +13,7 @@ Cầu nối trung gian hiệu năng cao chuyển đổi giao diện web của **
 ## ✨ Tính Năng Nổi Bật
 
 - 🛡️ **Tích Hợp Proxy Độc Lập Cho Từng Account**:
-  - Hỗ trợ **Cloudflare WARP** siêu sạch, độ trễ cực thấp từ `C:\code\python\ip` (cổng `127.0.0.1:2080`).
+  - Tích hợp sẵn bộ công cụ **Cloudflare WARP** siêu sạch, độ trễ cực thấp trong thư mục `./ip` (cổng `127.0.0.1:2080`).
   - Hỗ trợ gán proxy riêng cho từng tài khoản: `email1:pass1:proxy1,email2:pass2:proxy2`.
   - Mỗi tài khoản chạy trên một isolated Playwright Browser Context riêng biệt với IP khác nhau, không bị xung đột cookie hay dính vạ IP.
 - 💻 **Tương Thích Native Với Claude Code CLI**:
@@ -41,7 +41,7 @@ DEEPSEEK_PASSWORD="your_password_here"
 # Gán Proxy riêng cho từng tài khoản: email:password:proxy (ngăn cách bằng dấu phẩy)
 # DEEPSEEK_ACCOUNTS=acc1@domain.com:pass1:http://127.0.0.1:2080,acc2@domain.com:pass2:socks5://127.0.0.1:1080
 
-# Proxy sạch mặc định: Cloudflare WARP via sing-box (C:\code\python\ip)
+# Proxy sạch mặc định: Cloudflare WARP via sing-box (tích hợp trong ./ip)
 DEEPSEEK_PROXY=http://127.0.0.1:2080
 
 # Cấu hình API Server
@@ -56,19 +56,28 @@ CONTEXT_FILE_THRESHOLD=30000
 
 ---
 
-## 🚀 Khởi Động Hệ Thống
+## 🚀 Khởi Động Nhanh (1-Click)
 
-### 1. Khởi chạy Cloudflare WARP Proxy:
+Bạn chỉ cần chạy file:
 ```bash
-python -c "from proxy_helper import start_warp_service; start_warp_service()"
+start_bridge.bat
 ```
-*(Hoặc server sẽ tự động kích hoạt WARP trên cổng `127.0.0.1:2080` khi khởi động)*.
+Script sẽ tự động:
+1. Kiểm tra và khởi chạy engine proxy Cloudflare WARP trong `./ip` tại `127.0.0.1:2080` (tự tải sing-box portable nếu chưa có).
+2. Khởi chạy máy chủ DeepSeek API Bridge WSGI tại `http://127.0.0.1:5001`.
 
-### 2. Khởi chạy DeepSeek Bridge Server:
-```bash
-python server.py
-```
-Server sẽ chạy tại `http://127.0.0.1:5001`.
+---
+
+## 🌐 Bộ Công Cụ Quản Lý IP Riêng Biệt (`./ip`)
+
+Nếu muốn điều khiển hoặc đổi IP độc lập:
+- Mở thư mục [./ip](file:///c:/code/python/bowers/deepapi/ip):
+  - **`run.bat`**: Menu tương tác đầy đủ (Bật/Tắt, đổi IP mới, kiểm tra ping).
+  - **`start_ipv6.bat`**: Bật ngay IPv6 cho toàn máy (hỗ trợ cả trình duyệt Chrome/Edge).
+  - **`stop_ipv6.bat`**: Tắt proxy, khôi phục mạng ban đầu.
+  - **`test_ipv6.bat`**: Kiểm tra địa chỉ IP hiện tại và độ trễ.
+- Dòng lệnh: `python ip/ipv6_tool.py new` để đổi sang một địa chỉ IP mới hoàn toàn.
+
 
 ---
 

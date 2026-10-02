@@ -21,7 +21,15 @@ if sys.platform.startswith('win'):
     except AttributeError:
         pass
 
-WARP_DIR = r"C:\code\python\ip"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_IP_DIR = os.path.join(BASE_DIR, "ip")
+if os.path.exists(LOCAL_IP_DIR):
+    WARP_DIR = LOCAL_IP_DIR
+elif os.path.exists(r"C:\code\python\ip"):
+    WARP_DIR = r"C:\code\python\ip"
+else:
+    WARP_DIR = LOCAL_IP_DIR
+
 SING_BOX_EXE = os.path.join(WARP_DIR, "bin", "sing-box.exe")
 SING_BOX_CONFIG = os.path.join(WARP_DIR, "singbox_config.json")
 LOCAL_WARP_PROXY = "http://127.0.0.1:2080"
@@ -40,6 +48,19 @@ def start_warp_service() -> bool:
     if is_port_open("127.0.0.1", 2080):
         print("[warp] Dịch vụ WARP Proxy (127.0.0.1:2080) đã đang chạy!")
         return True
+
+    ipv6_tool_script = os.path.join(WARP_DIR, "ipv6_tool.py")
+    if not os.path.exists(SING_BOX_EXE) or not os.path.exists(SING_BOX_CONFIG):
+        if os.path.exists(ipv6_tool_script):
+            print("[warp] Đang tự động chuẩn bị engine sing-box và cấu hình WARP...")
+            try:
+                subprocess.run([sys.executable, ipv6_tool_script, "start"], timeout=60)
+                time.sleep(2)
+                if is_port_open("127.0.0.1", 2080):
+                    print("[warp] WARP Proxy đã được khởi tạo và chạy thành công!")
+                    return True
+            except Exception as e:
+                print(f"[warp] Thiết lập tự động gặp lỗi: {e}")
 
     if not os.path.exists(SING_BOX_EXE) or not os.path.exists(SING_BOX_CONFIG):
         print(f"[warp] Không tìm thấy sing-box hoặc cấu hình tại {WARP_DIR}")

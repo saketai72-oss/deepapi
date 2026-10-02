@@ -1,0 +1,69 @@
+{
+  "log": {
+    "level": "warn",
+    "output": "singbox.log"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "dns-cloudflare",
+        "type": "udp",
+        "server": "1.1.1.1",
+        "detour": "warp-ep"
+      },
+      {
+        "tag": "dns-google",
+        "type": "udp",
+        "server": "8.8.8.8",
+        "detour": "warp-ep"
+      }
+    ],
+    "strategy": "prefer_ipv6"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "warp-ep",
+      "domain_strategy": "prefer_ipv6",
+      "address": [
+        "172.16.0.2/32",
+        "2606:4700:110:8ee9:8cc2:732f:b8e7:27cf/128"
+      ],
+      "private_key": "oTLoi7Ch2kYROQRdbGQDb7MMzmwnZJbeSafqzsOoPsc=",
+      "peers": [
+        {
+          "address": "162.159.192.1",
+          "port": 2408,
+          "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ],
+          "reserved": [
+            40,
+            120,
+            44
+          ]
+        }
+      ],
+      "mtu": 1280
+    }
+  ],
+  "route": {
+    "default_domain_resolver": "dns-cloudflare",
+    "rules": [
+      {
+        "outbound": "warp-ep",
+        "action": "route"
+      }
+    ]
+  }
+}
