@@ -5,6 +5,23 @@ Flask WSGI server (không dùng asyncio, không conflict với cloakbrowser)
 
 import sys
 import os
+import atexit
+import subprocess
+
+def cleanup_on_exit():
+    print("\n[cleanup] Dang don dep tien trinh ngam va khoi phuc mang...")
+    try:
+        # Run stop command of ipv6_tool.py to restore Windows System Proxy if it was set
+        ipv6_tool_path = os.path.join(os.path.dirname(__file__), "ip", "ipv6_tool.py")
+        if os.path.exists(ipv6_tool_path):
+            subprocess.run([sys.executable, ipv6_tool_path, "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Fallback kill
+        subprocess.run(["taskkill", "/F", "/IM", "sing-box.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+atexit.register(cleanup_on_exit)
 
 # Force UTF-8 encoding for stdout and stderr on Windows to avoid UnicodeEncodeError
 if sys.platform.startswith('win'):
@@ -1235,3 +1252,8 @@ if __name__ == "__main__":
             threaded=True,
             debug=False,
         )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cleanup_on_exit()
+

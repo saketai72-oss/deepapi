@@ -1,7 +1,7 @@
 {
   "log": {
     "level": "warn",
-    "output": "C:\\Codes\\deepapi\\ip\\singbox.log"
+    "output": "C:\\Codes\\testds\\deepapi\\ip\\singbox.log"
   },
   "dns": {
     "servers": [
@@ -35,9 +35,9 @@
       "domain_strategy": "prefer_ipv6",
       "address": [
         "172.16.0.2/32",
-        "2606:4700:110:8332:274c:9fe8:f607:db42/128"
+        "2606:4700:110:8bce:5f90:bb6a:d2a8:7c/128"
       ],
-      "private_key": "qgs90hOUTagGagi192PrplXs/KVbGVBB/xCDC+YobeI=",
+      "private_key": "oKvEf8fH1C0hADJ3j31eYOQGOvuJ/CH4TqkC/t7TptI=",
       "peers": [
         {
           "address": "162.159.192.1",
@@ -48,9 +48,9 @@
             "::/0"
           ],
           "reserved": [
-            82,
-            101,
-            234
+            221,
+            245,
+            197
           ]
         }
       ],
