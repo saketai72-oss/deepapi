@@ -75,19 +75,26 @@ def login_account(email: str, password: str):
     print("Đang đợi form đăng nhập...")
     for _ in range(15):
         time.sleep(1)
+        try:
+            inputs = page.query_selector_all("input")
+            if len(inputs) >= 2:
+                break
+        except Exception:
+            pass
+
+    try:
         inputs = page.query_selector_all("input")
         if len(inputs) >= 2:
-            break
-
-    inputs = page.query_selector_all("input")
-    if len(inputs) >= 2:
-        try:
             print("Đang tự động điền Email và Password...")
             inputs[0].fill(email)
             time.sleep(0.5)
             inputs[1].fill(password)
             time.sleep(0.5)
+    except Exception as e:
+        print(f"Lỗi khi truy vấn inputs: {e}")
+        inputs = []
 
+        try:
             # Check checkbox điều khoản nếu có
             checkboxes = page.query_selector_all("input[type='checkbox']")
             for cb in checkboxes:
@@ -106,7 +113,7 @@ def login_account(email: str, password: str):
                     btn.click()
                     break
         except Exception as e:
-            print(f"Lỗi khi điền form: {e}")
+            print(f"Lỗi khi điền form/click nút: {e}")
 
     print("\nĐang chờ đăng nhập thành công để tự động lấy token...")
     print("(Nếu màn hình hiện hình xếp hình / Captcha, bạn hãy kéo vào đúng vị trí nhé)")
