@@ -184,14 +184,41 @@ def login_account(email: str, password: str):
     time.sleep(2)
     browser.close()
 
+def load_env():
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip()
+                    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                        val = val[1:-1]
+                    os.environ[key] = val
+
 if __name__ == "__main__":
     if len(sys.argv) >= 3:
         email = sys.argv[1]
         password = sys.argv[2]
     else:
+        # Load .env first
+        load_env()
         # Lấy từ biến môi trường .env
         email = os.environ.get("DEEPSEEK_EMAIL", "")
         password = os.environ.get("DEEPSEEK_PASSWORD", "")
+        
+        if not email or not password:
+            accounts_env = os.environ.get("DEEPSEEK_ACCOUNTS", "")
+            if accounts_env:
+                first_acc = accounts_env.split(",")[0].strip()
+                parts = first_acc.split(":")
+                if len(parts) >= 2:
+                    email = parts[0].strip()
+                    password = parts[1].strip()
 
     if not email or not password:
         print("[!] Thiếu thông tin tài khoản. Vui lòng truyền: python login_helper.py <email> <password> hoặc cấu hình .env")
