@@ -106,10 +106,33 @@ Hoặc chạy headless với quyền tự động thực thi tool:
 claude -p "Viết một module scraper tin tức có cache và test đầy đủ" --dangerously-skip-permissions
 ```
 
-### Cách 2: Thiết lập thủ công qua biến môi trường
+### Cách 2: Thiết lập thủ công qua file `settings.json` của Claude
+
+Bạn có thể cấu hình cố định bằng cách chỉnh sửa hoặc tạo file `settings.json` tại thư mục gốc của Claude (thường nằm ở `~/.claude/settings.json` đối với Linux/macOS, hoặc `%USERPROFILE%\.claude\settings.json` đối với Windows).
+
+Hãy cấu hình phần `"env"` trong file JSON đó như sau:
+
+```json
+{
+  "env": {
+    "OPENAI_API_KEY": "sk-my-secret-key-1",
+    "OPENAI_BASE_URL": "http://127.0.0.1:5001",
+    "OPENAI_MODEL": "gpt-4o",
+    "ANTHROPIC_API_KEY": "sk-my-secret-key-1",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:5001",
+    "ANTHROPIC_MODEL": "gpt-4o"
+  }
+}
+```
+
+Việc này giúp bạn khai báo sẵn các thông số backend để điều hướng Claude Code qua hệ thống cục bộ. Ở các lần tiếp theo, bạn chỉ cần gọi lệnh `claude` mà không cần thiết lập lại.
+
+### Cách 3: Thiết lập thủ công qua biến môi trường (Terminal tạm thời)
+Nếu không muốn ghi vào file `settings.json`, bạn có thể khai báo tạm thời qua Terminal cho từng phiên làm việc:
 ```powershell
 $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:5001"
 $env:ANTHROPIC_API_KEY  = "sk-my-secret-key-1"
+$env:ANTHROPIC_MODEL    = "gpt-4o"
 claude
 ```
 
