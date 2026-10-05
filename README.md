@@ -29,42 +29,53 @@ Cầu nối trung gian hiệu năng cao chuyển đổi giao diện web của **
 
 ---
 
-## ⚙️ Cấu Hình Môi Trường (`.env`)
+## 🔰 Hướng Dẫn Cài Đặt Chi Tiết Cho Người Mới
 
-Mở file `.env` và tùy chỉnh:
+Nếu bạn là người mới bắt đầu, hãy làm theo từng bước sau để đảm bảo hệ thống hoạt động trơn tru nhất:
 
-```ini
-# DeepSeek Account mặc định (hoặc tự động tải từ .tokens.json)
-DEEPSEEK_EMAIL=your_deepseek_email@example.com
-DEEPSEEK_PASSWORD="your_password_here"
+### Bước 1: Cài đặt Python & Tải Code
+1. Cài đặt **[Python 3.8+](https://www.python.org/downloads/)** (Quan trọng: Phải nhớ tích chọn ô `Add Python to PATH` trong màn hình cài đặt đầu tiên).
+2. Tải toàn bộ mã nguồn của dự án này về máy và giải nén (hoặc dùng `git clone`).
 
-# Gán Proxy riêng cho từng tài khoản: email:password:proxy (ngăn cách bằng dấu phẩy)
-# DEEPSEEK_ACCOUNTS=acc1@domain.com:pass1:http://127.0.0.1:2080,acc2@domain.com:pass2:socks5://127.0.0.1:1080
-
-# Proxy sạch mặc định: Cloudflare WARP via sing-box (tích hợp trong ./ip)
-DEEPSEEK_PROXY=http://127.0.0.1:2080
-
-# Cấu hình API Server
-API_KEY=sk-my-secret-key-1
-PORT=5001
-HOST=0.0.0.0
-
-# Cơ chế gửi Context dạng File (chống tràn context cho task dài)
-ENABLE_CONTEXT_FILE=true
-CONTEXT_FILE_THRESHOLD=30000
+### Bước 2: Cài đặt Thư Viện Bắt Buộc
+Mở Terminal (Command Prompt / PowerShell) tại thư mục chứa mã nguồn và chạy lệnh:
+```bash
+pip install -r requirements.txt
+playwright install chromium
 ```
 
----
+### Bước 3: Cấu Hình Tài Khoản (`.env`)
+1. Đổi tên file `.env.example` thành `.env` (hoặc tạo một file `.env` mới hoàn toàn).
+2. Mở file `.env` bằng Notepad và sửa lại biến `DEEPSEEK_ACCOUNTS` theo tài khoản của bạn:
+   ```ini
+   # Định dạng: email:password (bạn có thể thêm proxy ở cuối nếu muốn)
+   DEEPSEEK_ACCOUNTS=your_email@gmail.com:your_password
+   
+   # Proxy sạch mặc định: Cloudflare WARP via sing-box (tích hợp trong ./ip)
+   DEEPSEEK_PROXY=http://127.0.0.1:2080
+   
+   # API Key mà bạn tự đặt ra để gọi từ app khác (Claude, Cursor...)
+   API_KEY=sk-my-secret-key-1
+   PORT=5001
+   HOST=0.0.0.0
+   ```
 
-## 🚀 Khởi Động Nhanh (1-Click)
+### Bước 4: Đăng Nhập Lần Đầu Để Lấy Token (Tránh Lỗi RISK_DEVICE)
+Vì DeepSeek bảo mật rất gắt, nếu bạn để script tự động chạy ngầm, rất dễ bị báo lỗi `RISK_DEVICE_DETECTED`. Lần đầu tiên, bạn hãy đăng nhập thủ công:
+1. Mở Terminal và chạy lệnh:
+   ```bash
+   python login_helper.py
+   ```
+2. Một cửa sổ trình duyệt (có giao diện) sẽ hiện lên và tự động điền Email/Mật khẩu. 
+3. Nếu xuất hiện xác minh hình ảnh (Captcha), bạn **chỉ cần dùng chuột kéo mảnh ghép**. 
+4. Script sẽ tự động lấy Token và lưu vào file `.tokens.json` (Khi màn hình terminal báo `[THÀNH CÔNG]` là xong).
 
-Bạn chỉ cần chạy file:
+### Bước 5: Khởi Động Máy Chủ (Bridge)
+Sau khi đã có token, những lần sau bạn không cần đăng nhập lại nữa. Chỉ cần chạy:
 ```bash
 start_bridge.bat
 ```
-Script sẽ tự động:
-1. Kiểm tra và khởi chạy engine proxy Cloudflare WARP trong `./ip` tại `127.0.0.1:2080` (tự tải sing-box portable nếu chưa có).
-2. Khởi chạy máy chủ DeepSeek API Bridge WSGI tại `http://127.0.0.1:5001`.
+Script sẽ tự động bật proxy WARP độc lập và khởi chạy máy chủ API tại `http://127.0.0.1:5001`.
 
 ---
 
